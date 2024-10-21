@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态心形</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: black;
+            margin: 0;
+        }
+        canvas {
+            /* 去掉边框 */
+            /* border: 1px solid white; */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="heartCanvas" width="640" height="480"></canvas>
+    <script>
+        const canvas = document.getElementById('heartCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const CANVAS_WIDTH = canvas.width;
+        const CANVAS_HEIGHT = canvas.height;
+        const CANVAS_CENTER_X = CANVAS_WIDTH / 2;
+        const CANVAS_CENTER_Y = CANVAS_HEIGHT / 2;
+        const IMAGE_ENLARGE = 11;
+        
+        let points = new Set();
+        let edgeDiffusionPoints = new Set();
+        let centerDiffusionPoints = new Set();
+        const generateFrame = 60; // 增加生成帧数量，减少变化速度
+        
+        function heartFunction(t, shrinkRatio = IMAGE_ENLARGE) {
+            const x = 16 * (Math.sin(t) ** 3) * shrinkRatio + CANVAS_CENTER_X;
+            const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * shrinkRatio + CANVAS_CENTER_Y;
+            return [Math.floor(x), Math.floor(y)];
+        }
+
+        function scatterInside(x, y, beta = 0.15) {
+            const ratioX = -beta * Math.log(Math.random());
+            const ratioY = -beta * Math.log(Math.random());
+            const dx = ratioX * (x - CANVAS_CENTER_X);
+            const dy = ratioY * (y - CANVAS_CENTER_Y);
+            return [x - dx, y - dy];
+        }
+
+        function shrink(x, y, ratio) {
+            const force = -1 / (((x - CANVAS_CENTER_X) ** 2 + (y - CANVAS_CENTER_Y) ** 2) ** 0.6);
+            const dx = ratio * force * (x - CANVAS_CENTER_X);
+            const dy = ratio * force * (y - CANVAS_CENTER_Y);
+            return [x - dx, y - dy];
+        }
+
+        function curve(p) {
+            return 2 * (2 * Math.sin(4 * p)) / (2 * Math.PI);
+        }
+
+        function build(number) {
+            for (let i = 0; i < number; i++) {
+                const t = Math.random() * 2 * Math.PI;
+                const [x, y] = heartFunction(t);
+                points.add(`${x},${y},0`);
+
+                for (let j = 0; j < 3; j++) {
+                    const [scatterX, scatterY] = scatterInside(x, y, 0.05);
+                    edgeDiffusionPoints.add(`${scatterX},${scatterY},0`);
+                }
+            }
+
+            const pointList = Array.from(points);
+            for (let i = 0; i < 4000; i++) {
+                const [x, y, z] = pointList[Math.floor(Math.random() * pointList.length)].split(',').map(Number);
+                const [scatterX, scatterY] = scatterInside(x, y, 0.17);
+                centerDiffusionPoints.add(`${scatterX},${scatterY},${z}`);
+            }
+        }
+
+        function calcPosition(x, y, z, ratio) {
+            const force = 1 / (((x - CANVAS_CENTER_X) ** 2 + (y - CANVAS_CENTER_Y) ** 2) ** 0.520);
+            const dx = ratio * force * (x - CANVAS_CENTER_X) + Math.floor(Math.random() * 3) - 1;
+            const dy = ratio * force * (y - CANVAS_CENTER_Y) + Math.floor(Math.random() * 3) - 1;
+            return [x - dx, y - dy];
+        }
+
+        function calc(generateFrame) {
+            const ratio = 10 * curve(generateFrame / 10 * Math.PI);
+            const haloRadius = Math.floor(4 + 6 * (1 + curve(generateFrame / 10 * Math.PI)));
+            const haloNumber = Math.floor(3000 + 4000 * Math.abs(curve(generateFrame / 10 * Math.PI) ** 2));
+
+            const allPoints = [];
+            const heartHaloPoint = new Set();
+
+            for (let i = 0; i < haloNumber; i++) {
+                const t = Math.random() * 2 * Math.PI;
+                let [x, y] = heartFunction(t, 11.6);
+                [x, y] = shrink(x, y, haloRadius);
+                if (!heartHaloPoint.has(`${x},${y}`)) {
+                    heartHaloPoint.add(`${x},${y}`);
+                    x += Math.floor(Math.random() * 29) - 14;
+                    y += Math.floor(Math.random() * 29) - 14;
+                    const size = Math.floor(Math.random() * 2) + 1;
+                    allPoints.push([x, y, size]);
+                }
+            }
+
+            points.forEach(point => {
+                const [x, y, z] = point.split(',').map(Number);
+                const [newX, newY] = calcPosition(x, y, z, ratio);
+                const size = Math.floor(Math.random() * 3) + 1;
+                allPoints.push([newX, newY, size]);
+            });
+
+            edgeDiffusionPoints.forEach(point => {
+                const [x, y, z] = point.split(',').map(Number);
+                const [newX, newY] = calcPosition(x, y, z, ratio);
+                const size = Math.floor(Math.random() * 2) + 1;
+                allPoints.push([newX, newY, size]);
+            });
+
+            centerDiffusionPoints.forEach(point => {
+                const [x, y, z] = point.split(',').map(Number);
+                const [newX, newY] = calcPosition(x, y, z, ratio);
+                const size = Math.floor(Math.random() * 2) + 1;
+                allPoints.push([newX, newY, size]);
+            });
+
+            return allPoints;
+        }
+
+        function render(renderFrame) {
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            const allPointsForFrame = calc(renderFrame % generateFrame);
+            const colorValue = (renderFrame * 2) % 255; // 减少颜色变化速度
+            const dynamicColor = `#${('0' + colorValue.toString(16)).slice(-2)}69b4`; // 生成渐变色
+
+            allPointsForFrame.forEach(([x, y, size]) => {
+                const sizeVariation = size + Math.floor(2 * Math.sin(renderFrame / 8)); // 大小变化
+                ctx.fillStyle = dynamicColor;
+                ctx.fillRect(x, y, sizeVariation, sizeVariation);
+            });
+        }
+
+        let frameInterval = 0; // 添加帧间隔控制
+        function animate(frame = 0) {
+            if (frameInterval % 36 === 0) { // 每2帧渲染一次
+                render(frame);
+            }
+            frameInterval++;
+            requestAnimationFrame(() => animate(frame + 1));
+        }
+
+        build(2000); // 生成点
+        animate(); // 开始动画
+    </script>
+</body>
+</html>
